@@ -1,0 +1,52 @@
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+      target: development
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_CHAIN_ID=11155111
+    volumes:
+      - ./apps/frontend:/app
+      - /app/node_modules
+    depends_on:
+      - node-agent
+    networks:
+      - hackathon-network
+
+  node-agent:
+    build:
+      context: .
+      dockerfile: apps/node-agent/Dockerfile
+      target: development
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - CHAIN_ID=11155111
+      - PRIVATE_KEY=${NODE_PRIVATE_KEY:-0x1234567890abcdef}
+    volumes:
+      - ./apps/node-agent:/app
+      - /app/go-mod-cache
+    networks:
+      - hackathon-network
+
+  contracts:
+    build:
+      context: .
+      dockerfile: packages/contracts/Dockerfile
+    volumes:
+      - ./packages/contracts:/app
+    networks:
+      - hackathon-network
+
+networks:
+  hackathon-network:
+    driver: bridge
+
+volumes:
+  node_modules:
+  go-mod-cache:

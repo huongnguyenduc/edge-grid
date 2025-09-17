@@ -1,0 +1,58 @@
+# General
+.DS_Store
+*.log
+*.sqlite
+*.sqlite-*
+.tmp/
+tmp/
+coverage/
+.env
+.env.*
+!.env.example
+!apps/frontend/.env.example
+!apps/node-agent/.env.example
+
+# Node / PNPM / Next.js
+node_modules/
+.pnpm-store/
+**/.next/
+**/out/
+dist/
+build/
+.vercel/
+
+# Frontend specific
+apps/frontend/.next/
+apps/frontend/.vercel/
+apps/frontend/.sass-cache/
+apps/frontend/public/generated/
+
+# Go (Node Agent)
+apps/node-agent/bin/
+apps/node-agent/tmp/
+apps/node-agent/go-mod-cache/
+**/*.test
+
+# Foundry / Contracts
+packages/contracts/out/
+packages/contracts/cache/
+packages/contracts/broadcast/
+foundry.toml.lock
+
+# Keep submodules in contracts/lib, ignore other vendored libs
+packages/contracts/lib/*
+!packages/contracts/lib/openzeppelin-contracts
+!packages/contracts/lib/forge-std
+
+# Docker
+**/.docker/
+**/docker-data/
+
+# Editor/Tools
+.vscode/
+.idea/
+*.swp
+
+# Datasets / Models (do not commit large assets)
+**/datasets/**
+**/models/**
