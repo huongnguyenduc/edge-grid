@@ -38,3 +38,48 @@
 - Do not commit secrets. Use `.env.example` templates.
 - Redact PII and keys from logs and prompts.
 
+## Commit Message Rules
+When generating commit messages, follow these guidelines:
+
+### Format
+- Use conventional commits format: `type(scope): description`
+- Keep subject line under 50 characters
+- Use imperative mood ("add feature" not "added feature")
+- Capitalize first letter of description
+
+### Types
+- `feat`: New features or functionality
+- `fix`: Bug fixes
+- `docs`: Documentation changes
+- `style`: Code style changes (formatting, etc.)
+- `refactor`: Code refactoring without behavior changes
+- `test`: Adding or updating tests
+- `chore`: Build process, dependencies, tooling
+- `perf`: Performance improvements
+- `ci`: CI/CD changes
+- `build`: Build system changes
+
+### Scopes (for EdgeGrid)
+- `contracts`: Smart contract changes
+- `frontend`: Next.js frontend changes
+- `node-agent`: Go backend changes
+- `shared`: Shared utilities/types
+- `docker`: Docker configuration
+- `docs`: Documentation updates
+- `deps`: Dependency updates
+
+### Examples
+- `feat(contracts): add NodeRegistry contract with EIP-712 verification`
+- `fix(frontend): resolve wallet connection timeout issue`
+- `docs(readme): update EdgeGrid branding and setup instructions`
+- `refactor(node-agent): extract signature validation to separate module`
+- `chore(deps): update wagmi to v2.0.0`
+- `test(contracts): add unit tests for JobEscrow settlement logic`
+
+### EdgeGrid Specific Rules
+- Always reference EdgeGrid in significant feature commits
+- Include component affected (contracts/frontend/node-agent)
+- Mention DePIN or AI inference context when relevant
+- Use present tense, active voice
+- Be specific about what changed and why
+

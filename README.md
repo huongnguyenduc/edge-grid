@@ -84,7 +84,7 @@ make node-agent-test
 ## 📁 Project Structure
 
 ```
-hackathon/
+EdgeGrid/
 ├── apps/
 │   ├── frontend/          # Next.js frontend
 │   └── node-agent/        # Go server
@@ -194,11 +194,11 @@ CONTRACT_ADDRESS=0x...
 ## 📚 Documentation
 
 - [Architecture Documentation](./ARCHITECTURE.md) - Detailed technical specifications
-- [Development Plan](./PLAN.md) - Hackathon development timeline
+- [Development Plan](./PLAN.md) - EdgeGrid development timeline
 - [Prompt Snippets](./prompts/) - AI coding templates
 - [Agents Guidance](./AGENTS.md) - Rules and context for AI assistants
 
-## 🎯 Hackathon Goals
+## 🎯 EdgeGrid Goals
 
 1. **Day 1**: Core infrastructure and smart contracts
 2. **Day 2**: Frontend integration and node agent
@@ -206,7 +206,7 @@ CONTRACT_ADDRESS=0x...
 
 ## 🤝 Contributing
 
-This is a hackathon project. Follow the guidance in `AGENTS.md` for coding standards and use the prompt snippets in `prompts/` for common tasks.
+This is the EdgeGrid project. Follow the guidance in `AGENTS.md` for coding standards and use the prompt snippets in `prompts/` for common tasks.
 
 ## 📄 License
 

@@ -1,4 +1,4 @@
-# Edge AI Inference Marketplace - Hackathon Plan
+# EdgeGrid - Edge AI Inference Marketplace Plan
 
 ## Project Overview
 
@@ -363,6 +363,6 @@ func (h *InferenceHandler) Infer(c *gin.Context) {
 
 ## Conclusion
 
-This plan provides a comprehensive roadmap for building a compelling DePIN hackathon project that demonstrates real-world utility, technical innovation, and clear value proposition. The Edge AI Inference Marketplace showcases how blockchain technology can enable new economic models for distributed computing resources while maintaining security and user experience.
+This plan provides a comprehensive roadmap for building EdgeGrid, a compelling DePIN project that demonstrates real-world utility, technical innovation, and clear value proposition. EdgeGrid showcases how blockchain technology can enable new economic models for distributed computing resources while maintaining security and user experience.
 
 The modular architecture allows for incremental development and testing, ensuring a working demo even if not all features are completed within the time constraints.

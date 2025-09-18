@@ -15,7 +15,7 @@ services:
     depends_on:
       - node-agent
     networks:
-      - hackathon-network
+      - edgegrid-network
 
   node-agent:
     build:
@@ -32,7 +32,7 @@ services:
       - ./apps/node-agent:/app
       - /app/go-mod-cache
     networks:
-      - hackathon-network
+      - edgegrid-network
 
   contracts:
     build:
@@ -41,10 +41,10 @@ services:
     volumes:
       - ./packages/contracts:/app
     networks:
-      - hackathon-network
+      - edgegrid-network
 
 networks:
-  hackathon-network:
+  edgegrid-network:
     driver: bridge
 
 volumes:

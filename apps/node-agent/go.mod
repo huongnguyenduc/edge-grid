@@ -1,4 +1,4 @@
-module github.com/duchuong/hackathon/node-agent
+module github.com/duchuong/edgegrid/node-agent
 
 go 1.21
 
@@ -32,4 +32,3 @@ require (
 	google.golang.org/protobuf v1.30.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-

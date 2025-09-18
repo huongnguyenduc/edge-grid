@@ -703,5 +703,5 @@ go run cmd/server/main.go
 - Machine learning insights
 - Predictive analytics
 
-This architecture document provides a comprehensive technical specification for implementing the Edge AI Inference Marketplace. Each component is designed to be modular, scalable, and secure while maintaining simplicity for rapid development during the hackathon timeframe.
+This architecture document provides a comprehensive technical specification for implementing EdgeGrid. Each component is designed to be modular, scalable, and secure while maintaining simplicity for rapid development.
 

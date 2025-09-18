@@ -1,5 +1,5 @@
 {
-  "name": "hackathon-monorepo",
+  "name": "edgegrid-monorepo",
   "private": true,
   "workspaces": [
     "apps/*",
@@ -13,4 +13,3 @@
     "clean": "pnpm -r clean"
   }
 }
-
