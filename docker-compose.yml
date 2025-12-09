@@ -1,0 +1,33 @@
+version: "3.8"
+
+services:
+  # 1. Web Dashboard
+  dashboard:
+    build: ./edge-dashboard
+    ports:
+      - "3000:80"
+    depends_on:
+      - gateway
+
+  # 2. Node Gateway (Sender of task)
+  gateway:
+    build: .
+    command: ["--port", "4001"]
+    ports:
+      - "4001:4001/udp" # P2P Port (QUIC uses UDP)
+      - "8001:8001" # WebSocket Port for Dashboard
+    volumes:
+      - ./data/node-4001:/root/data/node-4001
+    environment:
+      - DATA_DIR=/root/data/node-4001
+
+  # 3. Node Worker (Worker of task)
+  worker:
+    build: .
+    command: ["--port", "4002"]
+    ports:
+      - "4002:4002/udp"
+    volumes:
+      - ./data/node-4002:/root/data/node-4002
+    environment:
+      - DATA_DIR=/root/data/node-4002

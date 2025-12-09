@@ -1,0 +1,18 @@
+# Ignore data directory (BadgerDB) - Most important!
+data/
+
+# Ignore old build files
+edge-node
+edge-grid
+*.exe
+
+# Ignore git
+.git/
+.gitignore
+
+# Ignore other unnecessary files
+.vscode/
+.idea/
+README.md
+Makefile
+docker-compose.yml
