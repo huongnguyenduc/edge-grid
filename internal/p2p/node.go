@@ -34,12 +34,17 @@ func NewNode(listenPort int, dbPath string, hub *api.Hub) (*Node, error) {
 		return nil, err
 	}
 
-	listenAddr := fmt.Sprintf("/ip4/0.0.0.0/udp/%d/quic-v1", listenPort)
-
 	h, err := libp2p.New(
 		libp2p.Identity(priv),
-		libp2p.ListenAddrStrings(listenAddr),
+		libp2p.ListenAddrStrings(
+			fmt.Sprintf("/ip4/0.0.0.0/udp/%d/quic-v1", listenPort),
+			fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", listenPort), // TCP fallback
+		),
+		// Enable NAT service and auto NAT v2 (Hole Punching)
+		libp2p.EnableNATService(),
+		libp2p.EnableAutoNATv2(),
 	)
+
 	if err != nil {
 		return nil, err
 	}
