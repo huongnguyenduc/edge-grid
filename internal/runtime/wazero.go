@@ -15,7 +15,8 @@ type WasmRuntime struct {
 }
 
 func NewWasmRuntime(ctx context.Context) (*WasmRuntime, error) {
-	cfg := wazero.NewRuntimeConfigInterpreter()
+	cfg := wazero.NewRuntimeConfigInterpreter().
+		WithMemoryLimitPages(1024)
 	r := wazero.NewRuntimeWithConfig(ctx, cfg)
 
 	if _, err := wasi_snapshot_preview1.Instantiate(ctx, r); err != nil {
