@@ -1,0 +1,123 @@
+:root {
+  --bg-color: #050505;
+  --card-bg: #111;
+  --text-primary: #e0e0e0;
+  --accent-green: #00ff41;
+  --accent-blue: #0088ff;
+  --border-color: #333;
+}
+
+body {
+  background-color: var(--bg-color);
+  color: var(--text-primary);
+  font-family: 'Courier New', Courier, monospace; /* Font kiểu Terminal */
+  margin: 0;
+  padding: 20px;
+  overflow-x: hidden;
+}
+
+.dashboard-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr 300px; /* Layout: Main Content - Sidebar */
+  gap: 20px;
+}
+
+/* Header */
+header {
+  grid-column: 1 / -1;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.status-indicator {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: red;
+  box-shadow: 0 0 5px red;
+  margin-right: 8px;
+}
+
+.status-indicator.connected {
+  background-color: var(--accent-green);
+  box-shadow: 0 0 8px var(--accent-green);
+}
+
+/* Terminal Log Section */
+.terminal-window {
+  background-color: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  height: 500px;
+  display: flex;
+  flex-direction: column;
+}
+
+.terminal-header {
+  background-color: #222;
+  padding: 5px 10px;
+  font-size: 0.8rem;
+  border-bottom: 1px solid var(--border-color);
+  color: #888;
+}
+
+.terminal-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px;
+  font-size: 0.9rem;
+}
+
+.log-entry {
+  margin-bottom: 8px;
+  border-bottom: 1px solid #222;
+  padding-bottom: 4px;
+  animation: fadeIn 0.3s ease-in;
+}
+
+.log-time { color: #666; margin-right: 10px; }
+.log-worker { color: var(--accent-blue); }
+.log-result { color: var(--accent-green); font-weight: bold; }
+
+/* Nodes Grid Section */
+.nodes-panel {
+  background-color: var(--card-bg);
+  border: 1px solid var(--border-color);
+  padding: 15px;
+  border-radius: 4px;
+}
+
+.node-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.node-card {
+  border: 1px solid var(--border-color);
+  padding: 10px;
+  text-align: center;
+  font-size: 0.8rem;
+  border-radius: 4px;
+  transition: all 0.3s;
+  cursor: default;
+}
+
+.node-card.active {
+  border-color: var(--accent-green);
+  background-color: rgba(0, 255, 65, 0.1);
+  box-shadow: 0 0 10px var(--accent-green);
+  transform: scale(1.05);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
