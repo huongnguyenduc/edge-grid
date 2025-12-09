@@ -13,7 +13,9 @@ import (
 	"time"
 
 	"github.com/libp2p/go-libp2p"
+	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/event"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -49,9 +51,22 @@ func NewNode(listenPort int, dbPath string, hub *api.Hub) (*Node, error) {
 			fmt.Sprintf("/ip4/0.0.0.0/udp/%d/quic-v1", listenPort),
 			fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", listenPort), // TCP fallback
 		),
-		// Enable NAT service and auto NAT v2 (Hole Punching)
+
+		// 1. NAT Port Mapping (UPnP)
+		// Try to open port automatically
 		libp2p.EnableNATService(),
+
+		// 2. AutoNAT
+		// Help node to ask "What is my public IP?"
 		libp2p.EnableAutoNATv2(),
+
+		// 3. Hole Punching
+		// Technique to punch a hole to allow 2 nodes after NAT to connect directly
+		libp2p.EnableHolePunching(),
+
+		// 4. Circuit Relay (Client)
+		// If hole punching fails, allow connection to go through public Relay Node
+		libp2p.EnableRelay(),
 	)
 
 	if err != nil {
@@ -72,6 +87,27 @@ func NewNode(listenPort int, dbPath string, hub *api.Hub) (*Node, error) {
 	}
 
 	h.SetStreamHandler(ProtocolID, node.handleStream)
+
+	sub, err := h.EventBus().Subscribe(new(event.EvtLocalReachabilityChanged))
+	if err != nil {
+		log.Printf("Failed to subscribe to reachability events: %v", err)
+	} else {
+		go func() {
+			defer sub.Close()
+			for e := range sub.Out() {
+				evt := e.(event.EvtLocalReachabilityChanged)
+				// Reachability has 3 states: Unknown, Public, Private
+				status := "Unknown"
+				switch evt.Reachability {
+				case network.ReachabilityPublic:
+					status = "🌍 PUBLIC (Internet Accessible)"
+				case network.ReachabilityPrivate:
+					status = "🔒 PRIVATE (Behind NAT)"
+				}
+				log.Printf("📶 Network Status Changed: %s", status)
+			}
+		}()
+	}
 
 	return node, nil
 }
@@ -284,6 +320,41 @@ func (n *Node) SendTask(ctx context.Context, peerID peer.ID, wasmBytes []byte, t
 	}
 
 	return resp.OutputData, nil
+}
+
+// Join global network (Global DHT)
+func (n *Node) JoinGlobalNetwork(ctx context.Context) error {
+	// 1. Initialize DHT (Distributed Hash Table)
+	// ModeAuto: Both Client and Server if network is healthy
+	kademliaDHT, err := dht.New(ctx, n.Host, dht.Mode(dht.ModeAuto))
+	if err != nil {
+		return err
+	}
+
+	if err = kademliaDHT.Bootstrap(ctx); err != nil {
+		return err
+	}
+
+	// 2. Connect to the public bootstrap peers (IPFS/Libp2p)
+	// These are the super stable nodes operated by Protocol Labs
+	bootstrapPeers := dht.DefaultBootstrapPeers
+
+	var wg sync.WaitGroup
+	for _, peerAddr := range bootstrapPeers {
+		peerinfo, _ := peer.AddrInfoFromP2pAddr(peerAddr)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := n.Host.Connect(ctx, *peerinfo); err != nil {
+				// If we can't connect to all, it's not a problem
+			} else {
+				log.Printf("🌍 Connected to bootstrap node: %s", peerinfo.ID.ShortString())
+			}
+		}()
+	}
+
+	// No need to wait for all, just run in the background
+	return nil
 }
 
 type discoveryNotifee struct {

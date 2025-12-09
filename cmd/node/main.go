@@ -41,6 +41,15 @@ func main() {
 	fmt.Printf("Edge-Grid Node running on port %d\n", *port)
 	fmt.Printf("Database stored at: %s\n", dbPath)
 
+	// Connect to the Internet (DHT)
+	// Note: This may take 5-10s to find peers
+	go func() {
+		log.Println("🌐 Joining Global DHT Network...")
+		if err := node.JoinGlobalNetwork(context.Background()); err != nil {
+			log.Printf("DHT Error: %v", err)
+		}
+	}()
+
 	if err := node.StartDiscovery(); err != nil {
 		panic(err)
 	}
