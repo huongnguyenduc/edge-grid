@@ -151,58 +151,49 @@ func (n *Node) StartDiscovery() error {
 	return s.Start()
 }
 
-// SendTask send Task and wait for result
-func (n *Node) SendTask(ctx context.Context, peerID peer.ID, wasmBytes []byte, taskID string, inputData []byte) {
-	// 1. Open Stream
-	s, err := n.Host.NewStream(ctx, peerID, ProtocolID)
-	if err != nil {
-		log.Printf("Stream open failed: %v", err)
-		return
-	}
-	defer s.Close() // Close stream when function ends
+func (n *Node) SendTask(ctx context.Context, peerID peer.ID, wasmBytes []byte, taskID string, input []byte) ([]byte, error) {
+	// 1. Open stream with timeout (example 3s)
+	ctxConnect, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
 
-	// 2. Create Request
+	s, err := n.Host.NewStream(ctxConnect, peerID, ProtocolID)
+	if err != nil {
+		return nil, fmt.Errorf("connection failed: %w", err)
+	}
+	defer s.Close()
+
+	// 2. Send Request
 	req := &pb.TaskRequest{
 		TaskId:     taskID,
 		WasmBinary: wasmBytes,
-		InputData:  inputData,
+		InputData:  input,
 	}
-
 	data, _ := proto.Marshal(req)
 
-	// 3. Send Request
-	_, err = s.Write(data)
-	if err != nil {
-		log.Printf("Write failed: %v", err)
-		return
+	// Set deadline for writing (avoid hanging if network lag)
+	s.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	if _, err = s.Write(data); err != nil {
+		return nil, fmt.Errorf("write failed: %w", err)
 	}
+	s.CloseWrite() // Notify done sending
 
-	// IMPORTANT: Notify the other side that "I have sent the request content"
-	// So that the other side can io.ReadAll() and start processing.
-	// But don't close the stream yet, because we still need to read the response.
-	s.CloseWrite()
-
-	log.Printf("b Sent task %s to %s. Waiting for result...", taskID, peerID.ShortString())
-
-	// 4. Read Response
+	// 3. Read Response with Deadline (example wait for max 10s)
+	s.SetReadDeadline(time.Now().Add(10 * time.Second))
 	respData, err := io.ReadAll(s)
 	if err != nil {
-		log.Printf("Read response failed: %v", err)
-		return
+		return nil, fmt.Errorf("read response failed: %w", err)
 	}
 
 	resp := &pb.TaskResponse{}
 	if err := proto.Unmarshal(respData, resp); err != nil {
-		log.Printf("Invalid response: %v", err)
-		return
+		return nil, fmt.Errorf("invalid response proto: %w", err)
 	}
 
-	// 5. Print result
 	if resp.Error != "" {
-		log.Printf("❌ Remote Error from %s: %s", peerID.ShortString(), resp.Error)
-	} else {
-		log.Printf("✅ Result from %s: %s", peerID.ShortString(), string(resp.OutputData))
+		return nil, fmt.Errorf("worker error: %s", resp.Error)
 	}
+
+	return resp.OutputData, nil
 }
 
 type discoveryNotifee struct {

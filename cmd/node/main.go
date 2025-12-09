@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"edge-grid/internal/api"
+	"edge-grid/internal/core"
 	"edge-grid/internal/p2p"
 	"flag"
 	"fmt"
@@ -58,6 +59,8 @@ func main() {
 		log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", wsPort), nil))
 	}()
 
+	orch := core.NewOrchestrator(node)
+
 	// CLI Loop
 	go func() {
 		scanner := bufio.NewScanner(os.Stdin)
@@ -82,8 +85,8 @@ func main() {
 				continue
 			}
 
-			// Lệnh deploy mặc định (Enter)
-			inputData := cmd // Text người dùng gõ, ví dụ: "Hello Edge Grid"
+			// Default deploy command (Enter)
+			inputData := cmd // Text user typed, example: "Hello Edge Grid"
 			if inputData == "" {
 				inputData = "Default Input"
 			}
@@ -94,18 +97,13 @@ func main() {
 				continue
 			}
 
-			peers := node.Host.Network().Peers()
-			if len(peers) == 0 {
-				fmt.Println("Waiting for peers...")
-				continue
-			}
+			fmt.Printf("🚀 Deploying task input: '%s'\n", inputData)
 
-			for _, p := range peers {
-				fmt.Printf("Deploying task with input '%s' to %s...\n", inputData, p.ShortString())
-				taskID := fmt.Sprintf("task-%d", time.Now().UnixNano())
-
-				// Sửa hàm SendTask để nhận thêm InputData
-				node.SendTask(context.Background(), p, wasmBytes, taskID, []byte(inputData))
+			result, err := orch.DeployTaskWithRetry(wasmBytes, []byte(inputData))
+			if err != nil {
+				fmt.Printf("❌ DEPLOYMENT FAILED: %v\n", err)
+			} else {
+				fmt.Printf("🎉 FINAL RESULT: %s\n", string(result))
 			}
 		}
 	}()
