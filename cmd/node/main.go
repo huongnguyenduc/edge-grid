@@ -26,16 +26,16 @@ func main() {
 	hub := api.NewHub()
 	go hub.Run()
 
-	// Tạo thư mục data riêng cho từng port để không bị conflict DB
+	// Create a separate data directory for each port to avoid DB conflict
 	dbPath := fmt.Sprintf("./data/node-%d", *port)
 	os.MkdirAll(dbPath, 0755)
 
-	// Khởi tạo Node với DB Path
+	// Initialize Node with DB Path
 	node, err := p2p.NewNode(*port, dbPath, hub)
 	if err != nil {
 		panic(err)
 	}
-	defer node.Store.Close() // Nhớ đóng DB khi tắt app
+	defer node.Store.Close() // Remember to close DB when app is stopped
 
 	fmt.Printf("Edge-Grid Node running on port %d\n", *port)
 	fmt.Printf("Database stored at: %s\n", dbPath)
@@ -44,8 +44,13 @@ func main() {
 		panic(err)
 	}
 
-	// 3. Chạy HTTP Server cho WebSocket (chạy port khác với P2P port)
-	// Ví dụ: P2P port 4001 -> WS port 8001
+	fmt.Println("💓 Starting Heartbeat System (GossipSub)...")
+	if err := node.SetupHeartbeat(context.Background()); err != nil {
+		panic(err)
+	}
+
+	// 3. Run HTTP Server for WebSocket (run on a different port from P2P port)
+	// Example: P2P port 4001 -> WS port 8001
 	wsPort := *port + 4000
 	go func() {
 		http.HandleFunc("/ws", hub.ServeWs)
