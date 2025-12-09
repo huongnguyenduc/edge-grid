@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
@@ -30,6 +31,9 @@ func (w *WasmRuntime) Run(ctx context.Context, wasmBytes []byte, input []byte) (
 		return nil, err
 	}
 	defer code.Close(ctx)
+
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
 
 	// --- MOST IMPORTANT CONFIGURATION ---
 	// WithStartFunctions(): Pass empty to tell Wazero NOT to run main()
@@ -73,9 +77,12 @@ func (w *WasmRuntime) Run(ctx context.Context, wasmBytes []byte, input []byte) (
 	if err != nil {
 		if strings.Contains(err.Error(), "exit_code(0)") {
 			err = nil
-		} else {
-			return nil, fmt.Errorf("execution failed: %v", err)
 		}
+		// Check Timeout Error
+		if strings.Contains(err.Error(), "context deadline exceeded") {
+			return nil, fmt.Errorf("execution timed out (killed after 2s)")
+		}
+		return nil, fmt.Errorf("execution failed: %v", err)
 	}
 
 	// 4. Read result from RAM
