@@ -104,6 +104,12 @@ func (n *Node) listenHeartbeats(ctx context.Context, sub *pubsub.Subscription) {
 			continue
 		}
 
+		n.PeerStats.Store(msg.ReceivedFrom, PeerMetric{
+			CPUUsage: hb.CPUUsage,
+			RamUsage: hb.RamUsage,
+			LastSeen: time.Now().Unix(),
+		})
+
 		// Push event to Dashboard through WebSocket
 		// Wrap it in JSON with type="HEARTBEAT"
 		eventJSON := fmt.Sprintf(`{"type": "HEARTBEAT", "node_id": "%s", "cpu": %.2f, "ram": %d}`,

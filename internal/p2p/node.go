@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/libp2p/go-libp2p"
@@ -22,11 +23,18 @@ import (
 
 const ProtocolID = "/edge-grid/1.0.0"
 
+type PeerMetric struct {
+	CPUUsage float64
+	RamUsage uint64
+	LastSeen int64
+}
+
 type Node struct {
-	Host    host.Host
-	Store   *storage.Store
-	Hub     *api.Hub
-	PrivKey crypto.PrivKey
+	Host      host.Host
+	Store     *storage.Store
+	Hub       *api.Hub
+	PrivKey   crypto.PrivKey
+	PeerStats sync.Map // Map[peer.ID]PeerMetric
 }
 
 func NewNode(listenPort int, dbPath string, hub *api.Hub) (*Node, error) {
