@@ -5,7 +5,7 @@ import (
 	pb "edge-grid/api/proto"
 	"edge-grid/internal/api"
 	"edge-grid/internal/runtime"
-	"edge-grid/internal/storage" // <--- Import storage
+	"edge-grid/internal/storage"
 	"fmt"
 	"io"
 	"log"
@@ -24,13 +24,11 @@ const ProtocolID = "/edge-grid/1.0.0"
 
 type Node struct {
 	Host  host.Host
-	Store *storage.Store // <--- Thêm trường Store
+	Store *storage.Store
 	Hub   *api.Hub
 }
 
-// Sửa hàm NewNode để nhận thêm đường dẫn DB
 func NewNode(listenPort int, dbPath string, hub *api.Hub) (*Node, error) {
-	// ... (Code tạo key RSA giữ nguyên)
 	priv, _, err := crypto.GenerateKeyPair(crypto.RSA, 2048)
 	if err != nil {
 		return nil, err
@@ -46,7 +44,7 @@ func NewNode(listenPort int, dbPath string, hub *api.Hub) (*Node, error) {
 		return nil, err
 	}
 
-	// 1. Khởi tạo Storage
+	// 1. Initialize Storage
 	store, err := storage.NewStore(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init db: %v", err)
@@ -54,7 +52,7 @@ func NewNode(listenPort int, dbPath string, hub *api.Hub) (*Node, error) {
 
 	node := &Node{
 		Host:  h,
-		Store: store, // Lưu store vào struct
+		Store: store,
 		Hub:   hub,
 	}
 
@@ -63,11 +61,11 @@ func NewNode(listenPort int, dbPath string, hub *api.Hub) (*Node, error) {
 	return node, nil
 }
 
-// handleStream: Nhận Task -> Chạy -> TRẢ KẾT QUẢ
+// handleStream: Receive Task -> Run -> Return Result
 func (n *Node) handleStream(s network.Stream) {
-	defer s.Close() // Đóng stream khi xong việc
+	defer s.Close() // Close stream when done
 
-	// 1. Đọc Request (Code cũ)
+	// 1. Read Request
 	data, err := io.ReadAll(s)
 	if err != nil {
 		return
@@ -81,16 +79,16 @@ func (n *Node) handleStream(s network.Stream) {
 	senderID := s.Conn().RemotePeer().String()
 	log.Printf("📥 Processing Task %s from %s", req.TaskId, senderID[:10])
 
-	// 2. Ghi trạng thái PENDING vào DB
+	// 2. Save status PENDING to DB
 	taskRecord := storage.TaskRecord{
 		ID:        req.TaskId,
 		Source:    senderID,
 		Status:    storage.StatusRunning,
 		Timestamp: time.Now().Unix(),
 	}
-	n.Store.SaveTask(taskRecord) // Lưu lần 1
+	n.Store.SaveTask(taskRecord) // Save first time
 
-	// 2. Chạy Runtime (Code cũ)
+	// 2. Run Runtime
 	ctx := context.Background()
 	rt, err := runtime.NewWasmRuntime(ctx)
 	if err != nil {
@@ -106,22 +104,22 @@ func (n *Node) handleStream(s network.Stream) {
 		WorkerId: n.Host.ID().String(),
 	}
 
-	// 3. Cập nhật kết quả
+	// 3. Update result
 	if err != nil {
-		// Nếu vào đây nghĩa là lỗi thật sự (Runtime crash, Out of memory...)
+		// If we get here, it means there's a real error (Runtime crash, Out of memory...)
 		taskRecord.Status = storage.StatusFailed
 		taskRecord.Result = err.Error()
 		resp.Error = err.Error()
 		log.Printf("❌ Task Failed: %v", err)
 	} else {
-		// Nếu vào đây nghĩa là Success (bao gồm cả Exit Code 0)
+		// If we get here, it means Success (including Exit Code 0)
 		taskRecord.Status = storage.StatusCompleted
 
-		// Convert output byte sang string để log cho đẹp
+		// Convert output byte to string for pretty logging
 		resultStr := string(output)
 		taskRecord.Result = resultStr
 
-		resp.OutputData = output // Gửi data gốc về
+		resp.OutputData = output // Send original data back
 		log.Printf("✅ Task Completed. Result: %s", resultStr)
 
 		event := fmt.Sprintf(`{"type": "TASK_COMPLETED", "task_id": "%s", "worker": "%s", "result": "%s"}`,
@@ -132,14 +130,14 @@ func (n *Node) handleStream(s network.Stream) {
 
 	n.Store.SaveTask(taskRecord)
 
-	// 4. Gửi Response ngược lại cho Sender (CODE MỚI)
+	// 4. Send Response back to Sender
 	respBytes, err := proto.Marshal(resp)
 	if err != nil {
 		log.Printf("Marshal response failed: %v", err)
 		return
 	}
 
-	// Ghi vào stream cũ
+	// Write to stream
 	_, err = s.Write(respBytes)
 	if err != nil {
 		log.Printf("Failed to send response back: %v", err)
@@ -153,17 +151,17 @@ func (n *Node) StartDiscovery() error {
 	return s.Start()
 }
 
-// SendTask gửi Task và CHỜ kết quả trả về
+// SendTask send Task and wait for result
 func (n *Node) SendTask(ctx context.Context, peerID peer.ID, wasmBytes []byte, taskID string, inputData []byte) {
-	// 1. Mở Stream
+	// 1. Open Stream
 	s, err := n.Host.NewStream(ctx, peerID, ProtocolID)
 	if err != nil {
 		log.Printf("Stream open failed: %v", err)
 		return
 	}
-	defer s.Close() // Đóng stream khi hàm kết thúc
+	defer s.Close() // Close stream when function ends
 
-	// 2. Tạo Request
+	// 2. Create Request
 	req := &pb.TaskRequest{
 		TaskId:     taskID,
 		WasmBinary: wasmBytes,
@@ -172,21 +170,21 @@ func (n *Node) SendTask(ctx context.Context, peerID peer.ID, wasmBytes []byte, t
 
 	data, _ := proto.Marshal(req)
 
-	// 3. Gửi Request
+	// 3. Send Request
 	_, err = s.Write(data)
 	if err != nil {
 		log.Printf("Write failed: %v", err)
 		return
 	}
 
-	// QUAN TRỌNG: Báo cho bên kia biết "Tao đã gửi xong nội dung request rồi"
-	// Để bên kia io.ReadAll() thoát ra và bắt đầu xử lý.
-	// Nhưng KHÔNG đóng hẳn stream, vì ta còn cần đọc response.
+	// IMPORTANT: Notify the other side that "I have sent the request content"
+	// So that the other side can io.ReadAll() and start processing.
+	// But don't close the stream yet, because we still need to read the response.
 	s.CloseWrite()
 
 	log.Printf("b Sent task %s to %s. Waiting for result...", taskID, peerID.ShortString())
 
-	// 4. Đọc Response trả về (CODE MỚI)
+	// 4. Read Response
 	respData, err := io.ReadAll(s)
 	if err != nil {
 		log.Printf("Read response failed: %v", err)
@@ -199,7 +197,7 @@ func (n *Node) SendTask(ctx context.Context, peerID peer.ID, wasmBytes []byte, t
 		return
 	}
 
-	// 5. In kết quả
+	// 5. Print result
 	if resp.Error != "" {
 		log.Printf("❌ Remote Error from %s: %s", peerID.ShortString(), resp.Error)
 	} else {
@@ -215,7 +213,7 @@ func (n *discoveryNotifee) HandlePeerFound(pi peer.AddrInfo) {
 	if pi.ID == n.h.ID() {
 		return
 	}
-	log.Printf("Found peer: %s", pi.ID.ShortString())
+	log.Printf("Found peer: %s", pi.ID.ShortString()) // Print peer ID
 
 	if err := n.h.Connect(context.Background(), pi); err != nil {
 		log.Printf("Connection failed: %v", err)

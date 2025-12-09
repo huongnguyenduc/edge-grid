@@ -31,20 +31,20 @@ func (w *WasmRuntime) Run(ctx context.Context, wasmBytes []byte, input []byte) (
 	}
 	defer code.Close(ctx)
 
-	// --- CẤU HÌNH QUAN TRỌNG NHẤT ---
-	// WithStartFunctions(): Truyền rỗng để bảo Wazero ĐỪNG chạy hàm main()
-	// Điều này giữ cho Module luôn MỞ (Open) để ta gọi hàm handle sau đó.
+	// --- MOST IMPORTANT CONFIGURATION ---
+	// WithStartFunctions(): Pass empty to tell Wazero NOT to run main()
+	// This keeps the Module always OPEN so we can call handle function later.
 	modConfig := wazero.NewModuleConfig().WithStartFunctions()
 
 	mod, err := w.runtime.InstantiateModule(ctx, code, modConfig)
 	if err != nil {
 		return nil, err
 	}
-	// Lưu ý: Đừng defer mod.Close(ctx) ở đây nếu bạn muốn dùng lại module,
-	// nhưng trong kiến trúc Serverless function (mỗi request 1 lần chạy), ta close luôn cũng được.
+	// Note: Don't defer mod.Close(ctx) here if you want to reuse the module,
+	// but in Serverless function architecture (each request runs once), we can close it always.
 	defer mod.Close(ctx)
 
-	// 1. Lấy địa chỉ buffer
+	// 1. Get buffer address
 	ptrFunc := mod.ExportedFunction("getBufferPtr")
 	if ptrFunc == nil {
 		return nil, fmt.Errorf("function 'getBufferPtr' not found. Rebuild wasm?")
@@ -56,12 +56,12 @@ func (w *WasmRuntime) Run(ctx context.Context, wasmBytes []byte, input []byte) (
 
 	ptr := uint32(results[0])
 
-	// 2. Ghi Input vào RAM
+	// 2. Write Input to RAM
 	if !mod.Memory().Write(ptr, input) {
 		return nil, fmt.Errorf("memory write failed: out of bounds")
 	}
 
-	// 3. Gọi hàm handle
+	// 3. Call handle function
 	handleFunc := mod.ExportedFunction("handle")
 	if handleFunc == nil {
 		return nil, fmt.Errorf("function 'handle' not found")
@@ -69,7 +69,7 @@ func (w *WasmRuntime) Run(ctx context.Context, wasmBytes []byte, input []byte) (
 
 	_, err = handleFunc.Call(ctx, uint64(len(input)))
 
-	// Bắt lỗi Exit Code (Fallback an toàn)
+	// Catch Exit Code error (Fallback to safety)
 	if err != nil {
 		if strings.Contains(err.Error(), "exit_code(0)") {
 			err = nil
@@ -78,7 +78,7 @@ func (w *WasmRuntime) Run(ctx context.Context, wasmBytes []byte, input []byte) (
 		}
 	}
 
-	// 4. Đọc kết quả từ RAM
+	// 4. Read result from RAM
 	bytes, ok := mod.Memory().Read(ptr, uint32(len(input)))
 	if !ok {
 		return nil, fmt.Errorf("memory read failed: out of bounds")

@@ -9,10 +9,10 @@ import (
 )
 
 var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true }, // Cho phép CORS
+	CheckOrigin: func(r *http.Request) bool { return true }, // Allow CORS
 }
 
-// Hub quản lý các kết nối WebSocket tới Frontend
+// Hub manages WebSocket connections to the Frontend
 type Hub struct {
 	clients   map[*websocket.Conn]bool
 	broadcast chan []byte
@@ -41,7 +41,7 @@ func (h *Hub) Run() {
 	}
 }
 
-// ServeWs handle request từ Frontend
+// ServeWs handle request from the Frontend
 func (h *Hub) ServeWs(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -53,7 +53,7 @@ func (h *Hub) ServeWs(w http.ResponseWriter, r *http.Request) {
 	h.mu.Unlock()
 }
 
-// Broadcast gửi tin nhắn JSON string ra tất cả frontend đang mở
+// Broadcast message to all connected Frontends
 func (h *Hub) BroadcastEvent(eventJSON string) {
 	h.broadcast <- []byte(eventJSON)
 }

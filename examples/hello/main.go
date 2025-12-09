@@ -1,32 +1,32 @@
 package main
 
-// 1. Tạo một bộ đệm tĩnh 4KB để trao đổi dữ liệu
+// 1. Create a static 4KB buffer to exchange data
 var buffer [4096]byte
 
-// 2. Export hàm để Host biết địa chỉ bộ đệm này nằm đâu trong RAM
+// 2. Export function to let Host know where this buffer is in RAM
 //
 //export getBufferPtr
 func getBufferPtr() *byte {
 	return &buffer[0]
 }
 
-// 3. Hàm xử lý chính
-// Input: độ dài dữ liệu Host đã gửi vào buffer
-// Output: độ dài dữ liệu kết quả Wasm đã ghi đè vào buffer
+// 3. Main processing function
+// Input: length of data Host sent into buffer
+// Output: length of data result Wasm wrote into buffer
 //
 //export handle
 func handle(size uint32) uint32 {
-	// A. Đọc dữ liệu từ buffer (Host đã ghi vào đây)
+	// A. Read data from buffer (Host wrote here)
 	inputData := buffer[:size]
 	inputStr := string(inputData)
 
-	// B. Xử lý (Đảo ngược chuỗi)
+	// B. Process (Reverse string)
 	outputStr := reverse(inputStr)
 
-	// C. Ghi đè kết quả vào buffer
+	// C. Write result into buffer
 	copy(buffer[:], outputStr)
 
-	// D. Trả về độ dài kết quả mới
+	// D. Return new result length
 	return uint32(len(outputStr))
 }
 
