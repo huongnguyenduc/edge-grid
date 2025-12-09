@@ -125,7 +125,33 @@ func (n *Node) handleStream(s network.Stream) {
 	senderID := s.Conn().RemotePeer().String()
 	log.Printf("📥 Processing Task %s from %s", req.TaskId, senderID[:10])
 
-	// 2. Save status PENDING to DB
+	// Check if task already exists
+	existingTask, err := n.Store.GetTask(req.TaskId)
+	if err == nil {
+		log.Printf("⚠️ Task %s already exists (Status: %s). Idempotency check triggered.", req.TaskId, existingTask.Status)
+
+		// Case 1: Task completed -> Return cached result immediately (Cache)
+		if existingTask.Status == storage.StatusCompleted {
+			log.Printf("⏩ Returning cached result for %s", req.TaskId)
+
+			resp := &pb.TaskResponse{
+				TaskId:     req.TaskId,
+				WorkerId:   n.Host.ID().String(),
+				OutputData: []byte(existingTask.Result), // Return cached result
+			}
+			data, _ := proto.Marshal(resp)
+			s.Write(data)
+			return // Stop processing, don't run Wasm again
+		}
+
+		// Case 2: Task running -> Ignore this request (Debounce)
+		if existingTask.Status == storage.StatusRunning {
+			log.Printf("⏳ Task %s is already running. Ignoring duplicate request.", req.TaskId)
+			return
+		}
+	}
+
+	// 2. Save status PENDING to DB (if not already exists)
 	taskRecord := storage.TaskRecord{
 		ID:        req.TaskId,
 		Source:    senderID,
