@@ -22,10 +22,13 @@ const (
 )
 
 type TaskRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	WasmBinary    []byte                 `protobuf:"bytes,2,opt,name=wasm_binary,json=wasmBinary,proto3" json:"wasm_binary,omitempty"`
-	InputData     []byte                 `protobuf:"bytes,3,opt,name=input_data,json=inputData,proto3" json:"input_data,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	TaskId     string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	WasmBinary []byte                 `protobuf:"bytes,2,opt,name=wasm_binary,json=wasmBinary,proto3" json:"wasm_binary,omitempty"`
+	InputData  []byte                 `protobuf:"bytes,3,opt,name=input_data,json=inputData,proto3" json:"input_data,omitempty"`
+	// Security fields
+	Signature     []byte `protobuf:"bytes,4,opt,name=signature,proto3" json:"signature,omitempty"`                  // Digital signature of Sender
+	PublicKey     []byte `protobuf:"bytes,5,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"` // Public Key to verify by Worker
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -77,6 +80,20 @@ func (x *TaskRequest) GetWasmBinary() []byte {
 func (x *TaskRequest) GetInputData() []byte {
 	if x != nil {
 		return x.InputData
+	}
+	return nil
+}
+
+func (x *TaskRequest) GetSignature() []byte {
+	if x != nil {
+		return x.Signature
+	}
+	return nil
+}
+
+func (x *TaskRequest) GetPublicKey() []byte {
+	if x != nil {
+		return x.PublicKey
 	}
 	return nil
 }
@@ -153,13 +170,16 @@ var File_api_proto_task_proto protoreflect.FileDescriptor
 
 const file_api_proto_task_proto_rawDesc = "" +
 	"\n" +
-	"\x14api/proto/task.proto\x12\x05proto\"f\n" +
+	"\x14api/proto/task.proto\x12\x05proto\"\xa3\x01\n" +
 	"\vTaskRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x1f\n" +
 	"\vwasm_binary\x18\x02 \x01(\fR\n" +
 	"wasmBinary\x12\x1d\n" +
 	"\n" +
-	"input_data\x18\x03 \x01(\fR\tinputData\"{\n" +
+	"input_data\x18\x03 \x01(\fR\tinputData\x12\x1c\n" +
+	"\tsignature\x18\x04 \x01(\fR\tsignature\x12\x1d\n" +
+	"\n" +
+	"public_key\x18\x05 \x01(\fR\tpublicKey\"{\n" +
 	"\fTaskResponse\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x1b\n" +
 	"\tworker_id\x18\x02 \x01(\tR\bworkerId\x12\x1f\n" +

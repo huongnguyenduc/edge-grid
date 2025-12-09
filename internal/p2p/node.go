@@ -23,9 +23,10 @@ import (
 const ProtocolID = "/edge-grid/1.0.0"
 
 type Node struct {
-	Host  host.Host
-	Store *storage.Store
-	Hub   *api.Hub
+	Host    host.Host
+	Store   *storage.Store
+	Hub     *api.Hub
+	PrivKey crypto.PrivKey
 }
 
 func NewNode(listenPort int, dbPath string, hub *api.Hub) (*Node, error) {
@@ -56,9 +57,10 @@ func NewNode(listenPort int, dbPath string, hub *api.Hub) (*Node, error) {
 	}
 
 	node := &Node{
-		Host:  h,
-		Store: store,
-		Hub:   hub,
+		Host:    h,
+		Store:   store,
+		Hub:     hub,
+		PrivKey: priv,
 	}
 
 	h.SetStreamHandler(ProtocolID, node.handleStream)
@@ -81,6 +83,37 @@ func (n *Node) handleStream(s network.Stream) {
 		return
 	}
 
+	// --- VERIFICATION LOGIC ---
+	log.Printf("🔒 Verifying signature for task %s...", req.TaskId)
+
+	// 1. Parse Public Key from bytes
+	senderPubKey, err := crypto.UnmarshalPublicKey(req.PublicKey)
+	if err != nil {
+		log.Printf("❌ Auth Failed: Invalid Public Key")
+		return
+	}
+
+	// 2. Reconstruct original data (Wasm + Input)
+	dataToVerify := append(req.WasmBinary, req.InputData...)
+
+	// 3. Verify Signature
+	valid, err := senderPubKey.Verify(dataToVerify, req.Signature)
+	if err != nil || !valid {
+		log.Printf("❌ SECURITY ALERT: Invalid Signature! Task rejected.")
+		// Send error to Sender
+		resp := &pb.TaskResponse{
+			TaskId:   req.TaskId,
+			WorkerId: n.Host.ID().String(),
+			Error:    "Invalid Signature",
+		}
+		respBytes, _ := proto.Marshal(resp)
+		s.Write(respBytes)
+		return
+	}
+
+	log.Printf("🔓 Signature Valid. Sender is authenticated.")
+	// --------------------------
+
 	senderID := s.Conn().RemotePeer().String()
 	log.Printf("📥 Processing Task %s from %s", req.TaskId, senderID[:10])
 
@@ -93,7 +126,7 @@ func (n *Node) handleStream(s network.Stream) {
 	}
 	n.Store.SaveTask(taskRecord) // Save first time
 
-	// 2. Run Runtime
+	// 3. Run Runtime
 	ctx := context.Background()
 	rt, err := runtime.NewWasmRuntime(ctx)
 	if err != nil {
@@ -109,7 +142,7 @@ func (n *Node) handleStream(s network.Stream) {
 		WorkerId: n.Host.ID().String(),
 	}
 
-	// 3. Update result
+	// 4. Update result
 	if err != nil {
 		// If we get here, it means there's a real error (Runtime crash, Out of memory...)
 		taskRecord.Status = storage.StatusFailed
@@ -135,7 +168,7 @@ func (n *Node) handleStream(s network.Stream) {
 
 	n.Store.SaveTask(taskRecord)
 
-	// 4. Send Response back to Sender
+	// 5. Send Response back to Sender
 	respBytes, err := proto.Marshal(resp)
 	if err != nil {
 		log.Printf("Marshal response failed: %v", err)
@@ -167,11 +200,29 @@ func (n *Node) SendTask(ctx context.Context, peerID peer.ID, wasmBytes []byte, t
 	}
 	defer s.Close()
 
-	// 2. Send Request
+	// --- SIGNING LOGIC ---
+	// 1. Get data to sign (Wasm + Input)
+	dataToSign := append(wasmBytes, input...)
+
+	// 2. Sign with Private Key
+	signature, err := n.PrivKey.Sign(dataToSign)
+	if err != nil {
+		return nil, fmt.Errorf("signing failed: %w", err)
+	}
+
+	// 3. Get Public Key in bytes to send
+	pubKeyBytes, err := crypto.MarshalPublicKey(n.PrivKey.GetPublic())
+	if err != nil {
+		return nil, fmt.Errorf("marshal pubkey failed: %w", err)
+	}
+	// --------------------------
+
 	req := &pb.TaskRequest{
 		TaskId:     taskID,
 		WasmBinary: wasmBytes,
 		InputData:  input,
+		Signature:  signature,
+		PublicKey:  pubKeyBytes,
 	}
 	data, _ := proto.Marshal(req)
 
