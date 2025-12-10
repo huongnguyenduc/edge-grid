@@ -26,20 +26,22 @@ import (
 const ProtocolID = "/edge-grid/1.0.0"
 
 type PeerMetric struct {
-	CPUUsage float64
-	RamUsage uint64
-	LastSeen int64
+	CPUUsage   float64
+	RamUsage   uint64
+	LastSeen   int64
+	Reputation int
 }
 
 type Node struct {
-	Host      host.Host
-	Store     *storage.Store
-	Hub       *api.Hub
-	PrivKey   crypto.PrivKey
-	PeerStats sync.Map // Map[peer.ID]PeerMetric
+	Host        host.Host
+	Store       *storage.Store
+	Hub         *api.Hub
+	PrivKey     crypto.PrivKey
+	PeerStats   sync.Map // Map[peer.ID]PeerMetric
+	IsMalicious bool
 }
 
-func NewNode(listenPort int, dbPath string, hub *api.Hub) (*Node, error) {
+func NewNode(listenPort int, dbPath string, hub *api.Hub, malicious bool) (*Node, error) {
 	priv, _, err := crypto.GenerateKeyPair(crypto.RSA, 2048)
 	if err != nil {
 		return nil, err
@@ -80,10 +82,11 @@ func NewNode(listenPort int, dbPath string, hub *api.Hub) (*Node, error) {
 	}
 
 	node := &Node{
-		Host:    h,
-		Store:   store,
-		Hub:     hub,
-		PrivKey: priv,
+		Host:        h,
+		Store:       store,
+		Hub:         hub,
+		PrivKey:     priv,
+		IsMalicious: malicious,
 	}
 
 	h.SetStreamHandler(ProtocolID, node.handleStream)
@@ -206,6 +209,12 @@ func (n *Node) handleStream(s network.Stream) {
 	defer rt.Close(ctx)
 
 	output, err := rt.Run(ctx, req.WasmBinary, req.InputData)
+	// --- MALICIOUS LOGIC ---
+	if n.IsMalicious {
+		log.Printf("😈 I am a Malicious Node! Altering result...")
+		output = []byte("I HACKED THIS RESULT HEHE")
+	}
+	// ----------------------------------
 
 	resp := &pb.TaskResponse{
 		TaskId:   req.TaskId,
@@ -355,6 +364,34 @@ func (n *Node) JoinGlobalNetwork(ctx context.Context) error {
 
 	// No need to wait for all, just run in the background
 	return nil
+}
+
+func (n *Node) UpdateReputation(pid peer.ID, delta int) {
+	val, ok := n.PeerStats.Load(pid)
+	if !ok {
+		// If not exists, initialize default 100
+		val = PeerMetric{Reputation: 100, LastSeen: time.Now().Unix()}
+	}
+
+	metric := val.(PeerMetric)
+	metric.Reputation += delta
+
+	// Limit points (Cap)
+	if metric.Reputation > 100 {
+		metric.Reputation = 100
+	}
+
+	log.Printf("⭐ Reputation update for %s: %d (Delta: %d)", pid.ShortString(), metric.Reputation, delta)
+
+	n.PeerStats.Store(pid, metric)
+}
+
+func (n *Node) IsBanned(pid peer.ID) bool {
+	val, ok := n.PeerStats.Load(pid)
+	if !ok {
+		return false
+	} // Default is not banned
+	return val.(PeerMetric).Reputation <= 0
 }
 
 type discoveryNotifee struct {

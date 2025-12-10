@@ -17,6 +17,7 @@ import (
 
 func main() {
 	port := flag.Int("port", 0, "UDP Port to listen on")
+	malicious := flag.Bool("malicious", false, "Be a bad node (returns wrong results)")
 	flag.Parse()
 
 	if *port == 0 {
@@ -32,7 +33,7 @@ func main() {
 	os.MkdirAll(dbPath, 0755)
 
 	// Initialize Node with DB Path
-	node, err := p2p.NewNode(*port, dbPath, hub)
+	node, err := p2p.NewNode(*port, dbPath, hub, *malicious)
 	if err != nil {
 		panic(err)
 	}
@@ -107,6 +108,21 @@ func main() {
 			}
 
 			fmt.Printf("🚀 Deploying task input: '%s'\n", inputData)
+
+			if strings.HasPrefix(inputData, "consensus ") {
+				realInput := strings.TrimPrefix(inputData, "consensus ")
+
+				// Request 2 nodes to run (Demo)
+				// In practice, we need at least 3 nodes to remove 1 bad node
+				result, err := orch.DeployTaskWithConsensus(wasmBytes, []byte(realInput), 3)
+
+				if err != nil {
+					fmt.Printf("❌ CONSENSUS FAILED: %v\n", err)
+				} else {
+					fmt.Printf("🏆 TRUSTED RESULT: %s\n", string(result))
+				}
+				continue
+			}
 
 			result, err := orch.DeployTaskWithRetry(wasmBytes, []byte(inputData))
 			if err != nil {

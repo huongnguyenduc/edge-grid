@@ -104,10 +104,21 @@ func (n *Node) listenHeartbeats(ctx context.Context, sub *pubsub.Subscription) {
 			continue
 		}
 
+		// Default reputation is 100 (for new nodes)
+		currentReputation := 100
+
+		// Check if node is already in the list
+		if val, ok := n.PeerStats.Load(msg.ReceivedFrom); ok {
+			// If it is, get the old reputation (to not be reset to 100 or 0)
+			oldMetric := val.(PeerMetric)
+			currentReputation = oldMetric.Reputation
+		}
+
 		n.PeerStats.Store(msg.ReceivedFrom, PeerMetric{
-			CPUUsage: hb.CPUUsage,
-			RamUsage: hb.RamUsage,
-			LastSeen: time.Now().Unix(),
+			CPUUsage:   hb.CPUUsage,
+			RamUsage:   hb.RamUsage,
+			LastSeen:   time.Now().Unix(),
+			Reputation: currentReputation,
 		})
 
 		// Push event to Dashboard through WebSocket
