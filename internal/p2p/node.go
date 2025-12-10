@@ -6,9 +6,9 @@ import (
 	"edge-grid/internal/api"
 	"edge-grid/internal/runtime"
 	"edge-grid/internal/storage"
+	"edge-grid/pkg/logger"
 	"fmt"
 	"io"
-	"log"
 	"sync"
 	"time"
 
@@ -20,6 +20,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
+	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -93,7 +94,7 @@ func NewNode(listenPort int, dbPath string, hub *api.Hub, malicious bool) (*Node
 
 	sub, err := h.EventBus().Subscribe(new(event.EvtLocalReachabilityChanged))
 	if err != nil {
-		log.Printf("Failed to subscribe to reachability events: %v", err)
+		logger.Log.Error("Failed to subscribe to reachability events", zap.Error(err))
 	} else {
 		go func() {
 			defer sub.Close()
@@ -107,7 +108,7 @@ func NewNode(listenPort int, dbPath string, hub *api.Hub, malicious bool) (*Node
 				case network.ReachabilityPrivate:
 					status = "🔒 PRIVATE (Behind NAT)"
 				}
-				log.Printf("📶 Network Status Changed: %s", status)
+				logger.Log.Info("Network Status Changed", zap.String("status", status))
 			}
 		}()
 	}
@@ -117,9 +118,8 @@ func NewNode(listenPort int, dbPath string, hub *api.Hub, malicious bool) (*Node
 
 // handleStream: Receive Task -> Run -> Return Result
 func (n *Node) handleStream(s network.Stream) {
-	defer s.Close() // Close stream when done
+	defer s.Close()
 
-	// 1. Read Request
 	data, err := io.ReadAll(s)
 	if err != nil {
 		return
@@ -130,24 +130,22 @@ func (n *Node) handleStream(s network.Stream) {
 		return
 	}
 
-	// --- VERIFICATION LOGIC ---
-	log.Printf("🔒 Verifying signature for task %s...", req.TaskId)
+	logger.Log.Info("Verifying signature", zap.String("task_id", req.TaskId))
 
-	// 1. Parse Public Key from bytes
+	// Parse Public Key from bytes
 	senderPubKey, err := crypto.UnmarshalPublicKey(req.PublicKey)
 	if err != nil {
-		log.Printf("❌ Auth Failed: Invalid Public Key")
+		logger.Log.Error("Auth Failed: Invalid Public Key", zap.Error(err))
 		return
 	}
 
-	// 2. Reconstruct original data (Wasm + Input)
+	// Reconstruct original data (Wasm + Input)
 	dataToVerify := append(req.WasmBinary, req.InputData...)
 
-	// 3. Verify Signature
+	// Verify Signature
 	valid, err := senderPubKey.Verify(dataToVerify, req.Signature)
 	if err != nil || !valid {
-		log.Printf("❌ SECURITY ALERT: Invalid Signature! Task rejected.")
-		// Send error to Sender
+		logger.Log.Error("Security Alert: Invalid Signature! Task rejected.")
 		resp := &pb.TaskResponse{
 			TaskId:   req.TaskId,
 			WorkerId: n.Host.ID().String(),
@@ -158,76 +156,90 @@ func (n *Node) handleStream(s network.Stream) {
 		return
 	}
 
-	log.Printf("🔓 Signature Valid. Sender is authenticated.")
-	// --------------------------
+	logger.Log.Info("Signature Valid. Sender is authenticated.")
 
 	senderID := s.Conn().RemotePeer().String()
-	log.Printf("📥 Processing Task %s from %s", req.TaskId, senderID[:10])
+	logger.Log.Info("Processing Task",
+		zap.String("task_id", req.TaskId),
+		zap.String("sender_id", senderID),
+		zap.Int("wasm_size", len(req.WasmBinary)),
+		zap.Int("input_size", len(req.InputData)),
+	)
 
 	// Check if task already exists
 	existingTask, err := n.Store.GetTask(req.TaskId)
 	if err == nil {
-		log.Printf("⚠️ Task %s already exists (Status: %s). Idempotency check triggered.", req.TaskId, existingTask.Status)
+		logger.Log.Warn("Task already exists", zap.String("task_id", req.TaskId), zap.String("status", string(existingTask.Status)))
 
 		// Case 1: Task completed -> Return cached result immediately (Cache)
 		if existingTask.Status == storage.StatusCompleted {
-			log.Printf("⏩ Returning cached result for %s", req.TaskId)
+			logger.Log.Info("Returning cached result", zap.String("task_id", req.TaskId))
 
 			resp := &pb.TaskResponse{
 				TaskId:     req.TaskId,
 				WorkerId:   n.Host.ID().String(),
 				OutputData: []byte(existingTask.Result), // Return cached result
 			}
-			data, _ := proto.Marshal(resp)
-			s.Write(data)
+			data, err := proto.Marshal(resp)
+			if err != nil {
+				logger.Log.Error("Failed to marshal response", zap.Error(err))
+				return
+			}
+			_, err = s.Write(data)
+			if err != nil {
+				logger.Log.Error("Failed to write response", zap.Error(err))
+				return
+			}
 			return // Stop processing, don't run Wasm again
 		}
 
 		// Case 2: Task running -> Ignore this request (Debounce)
 		if existingTask.Status == storage.StatusRunning {
-			log.Printf("⏳ Task %s is already running. Ignoring duplicate request.", req.TaskId)
+			logger.Log.Info("Task is already running", zap.String("task_id", req.TaskId))
 			return
 		}
 	}
 
-	// 2. Save status PENDING to DB (if not already exists)
+	// Save status PENDING to DB (if not already exists)
 	taskRecord := storage.TaskRecord{
 		ID:        req.TaskId,
 		Source:    senderID,
 		Status:    storage.StatusRunning,
 		Timestamp: time.Now().Unix(),
 	}
-	n.Store.SaveTask(taskRecord) // Save first time
+	if err := n.Store.SaveTask(taskRecord); err != nil {
+		logger.Log.Error("Failed to save task status", zap.Error(err))
+		return
+	}
 
-	// 3. Run Runtime
+	// Run Runtime
 	ctx := context.Background()
 	rt, err := runtime.NewWasmRuntime(ctx)
 	if err != nil {
-		log.Printf("Runtime init error: %v", err)
+		logger.Log.Error("Runtime init error", zap.Error(err))
 		return
 	}
 	defer rt.Close(ctx)
 
 	output, err := rt.Run(ctx, req.WasmBinary, req.InputData)
-	// --- MALICIOUS LOGIC ---
+	// MALICIOUS LOGIC
 	if n.IsMalicious {
-		log.Printf("😈 I am a Malicious Node! Altering result...")
+		logger.Log.Info("I am a Malicious Node! Altering result...")
 		output = []byte("I HACKED THIS RESULT HEHE")
 	}
-	// ----------------------------------
 
 	resp := &pb.TaskResponse{
 		TaskId:   req.TaskId,
 		WorkerId: n.Host.ID().String(),
 	}
 
-	// 4. Update result
+	// Update result
 	if err != nil {
 		// If we get here, it means there's a real error (Runtime crash, Out of memory...)
 		taskRecord.Status = storage.StatusFailed
 		taskRecord.Result = err.Error()
 		resp.Error = err.Error()
-		log.Printf("❌ Task Failed: %v", err)
+		logger.Log.Error("Task Failed", zap.Error(err))
 	} else {
 		// If we get here, it means Success (including Exit Code 0)
 		taskRecord.Status = storage.StatusCompleted
@@ -237,7 +249,7 @@ func (n *Node) handleStream(s network.Stream) {
 		taskRecord.Result = resultStr
 
 		resp.OutputData = output // Send original data back
-		log.Printf("✅ Task Completed. Result: %s", resultStr)
+		logger.Log.Info("Task Completed", zap.String("result", resultStr))
 
 		event := fmt.Sprintf(`{"type": "TASK_COMPLETED", "task_id": "%s", "worker": "%s", "result": "%s"}`,
 			req.TaskId, n.Host.ID().ShortString(), resultStr)
@@ -247,19 +259,19 @@ func (n *Node) handleStream(s network.Stream) {
 
 	n.Store.SaveTask(taskRecord)
 
-	// 5. Send Response back to Sender
+	// Send Response back to Sender
 	respBytes, err := proto.Marshal(resp)
 	if err != nil {
-		log.Printf("Marshal response failed: %v", err)
+		logger.Log.Error("Marshal response failed", zap.Error(err))
 		return
 	}
 
 	// Write to stream
 	_, err = s.Write(respBytes)
 	if err != nil {
-		log.Printf("Failed to send response back: %v", err)
+		logger.Log.Error("Failed to send response back", zap.Error(err))
 	} else {
-		log.Printf("📤 Sent result back to %s", s.Conn().RemotePeer().ShortString())
+		logger.Log.Info("Sent result back to", zap.String("peer", s.Conn().RemotePeer().ShortString()))
 	}
 }
 
@@ -269,7 +281,7 @@ func (n *Node) StartDiscovery() error {
 }
 
 func (n *Node) SendTask(ctx context.Context, peerID peer.ID, wasmBytes []byte, taskID string, input []byte) ([]byte, error) {
-	// 1. Open stream with timeout (example 3s)
+	// Open stream with timeout (example 3s)
 	ctxConnect, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
@@ -279,7 +291,7 @@ func (n *Node) SendTask(ctx context.Context, peerID peer.ID, wasmBytes []byte, t
 	}
 	defer s.Close()
 
-	// --- SIGNING LOGIC ---
+	// Signing Logic
 	// 1. Get data to sign (Wasm + Input)
 	dataToSign := append(wasmBytes, input...)
 
@@ -294,7 +306,6 @@ func (n *Node) SendTask(ctx context.Context, peerID peer.ID, wasmBytes []byte, t
 	if err != nil {
 		return nil, fmt.Errorf("marshal pubkey failed: %w", err)
 	}
-	// --------------------------
 
 	req := &pb.TaskRequest{
 		TaskId:     taskID,
@@ -303,7 +314,10 @@ func (n *Node) SendTask(ctx context.Context, peerID peer.ID, wasmBytes []byte, t
 		Signature:  signature,
 		PublicKey:  pubKeyBytes,
 	}
-	data, _ := proto.Marshal(req)
+	data, err := proto.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request failed: %w", err)
+	}
 
 	// Set deadline for writing (avoid hanging if network lag)
 	s.SetWriteDeadline(time.Now().Add(5 * time.Second))
@@ -357,7 +371,7 @@ func (n *Node) JoinGlobalNetwork(ctx context.Context) error {
 			if err := n.Host.Connect(ctx, *peerinfo); err != nil {
 				// If we can't connect to all, it's not a problem
 			} else {
-				log.Printf("🌍 Connected to bootstrap node: %s", peerinfo.ID.ShortString())
+				logger.Log.Info("Connected to bootstrap node", zap.String("peer", peerinfo.ID.ShortString()))
 			}
 		}()
 	}
@@ -381,7 +395,7 @@ func (n *Node) UpdateReputation(pid peer.ID, delta int) {
 		metric.Reputation = 100
 	}
 
-	log.Printf("⭐ Reputation update for %s: %d (Delta: %d)", pid.ShortString(), metric.Reputation, delta)
+	logger.Log.Info("Reputation update", zap.String("peer", pid.ShortString()), zap.Int("reputation", metric.Reputation), zap.Int("delta", delta))
 
 	n.PeerStats.Store(pid, metric)
 }
@@ -402,11 +416,11 @@ func (n *discoveryNotifee) HandlePeerFound(pi peer.AddrInfo) {
 	if pi.ID == n.h.ID() {
 		return
 	}
-	log.Printf("Found peer: %s", pi.ID.ShortString()) // Print peer ID
+	logger.Log.Info("Found peer", zap.String("peer", pi.ID.ShortString())) // Print peer ID
 
 	if err := n.h.Connect(context.Background(), pi); err != nil {
-		log.Printf("Connection failed: %v", err)
+		logger.Log.Error("Connection failed", zap.Error(err))
 	} else {
-		log.Printf("Connected to %s via QUIC!", pi.ID.ShortString())
+		logger.Log.Info("Connected to", zap.String("peer", pi.ID.ShortString()))
 	}
 }

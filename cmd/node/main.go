@@ -6,16 +6,20 @@ import (
 	"edge-grid/internal/api"
 	"edge-grid/internal/core"
 	"edge-grid/internal/p2p"
+	"edge-grid/pkg/logger"
 	"flag"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"strings"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 func main() {
+	logger.InitLogger(false)
+	defer logger.Log.Sync()
 	port := flag.Int("port", 0, "UDP Port to listen on")
 	malicious := flag.Bool("malicious", false, "Be a bad node (returns wrong results)")
 	flag.Parse()
@@ -39,15 +43,15 @@ func main() {
 	}
 	defer node.Store.Close() // Remember to close DB when app is stopped
 
-	fmt.Printf("Edge-Grid Node running on port %d\n", *port)
-	fmt.Printf("Database stored at: %s\n", dbPath)
+	logger.Log.Info("Edge-Grid Node running on port", zap.Int("port", *port))
+	logger.Log.Info("Database stored at", zap.String("path", dbPath))
 
 	// Connect to the Internet (DHT)
 	// Note: This may take 5-10s to find peers
 	go func() {
-		log.Println("🌐 Joining Global DHT Network...")
+		logger.Log.Info("Joining Global DHT Network")
 		if err := node.JoinGlobalNetwork(context.Background()); err != nil {
-			log.Printf("DHT Error: %v", err)
+			logger.Log.Error("DHT Error", zap.Error(err))
 		}
 	}()
 
@@ -55,7 +59,7 @@ func main() {
 		panic(err)
 	}
 
-	fmt.Println("💓 Starting Heartbeat System (GossipSub)...")
+	logger.Log.Info("Starting Heartbeat System (GossipSub)")
 	if err := node.SetupHeartbeat(context.Background()); err != nil {
 		panic(err)
 	}
@@ -65,8 +69,11 @@ func main() {
 	wsPort := *port + 4000
 	go func() {
 		http.HandleFunc("/ws", hub.ServeWs)
-		log.Printf("🔥 Dashboard WebSocket running at: ws://localhost:%d/ws", wsPort)
-		log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", wsPort), nil))
+		logger.Log.Info("Dashboard WebSocket running at", zap.Int("port", wsPort))
+		err := http.ListenAndServe(fmt.Sprintf(":%d", wsPort), nil)
+		if err != nil {
+			logger.Log.Error("Failed to start HTTP server", zap.Error(err))
+		}
 	}()
 
 	orch := core.NewOrchestrator(node)
@@ -74,24 +81,24 @@ func main() {
 	// CLI Loop
 	go func() {
 		scanner := bufio.NewScanner(os.Stdin)
-		fmt.Println("Commands: [enter] to deploy, 'list' to show history")
+		logger.Log.Info("Commands: [enter] to deploy, 'list' to show history")
 
 		for scanner.Scan() {
 			cmd := scanner.Text()
 
-			// Lệnh xem lịch sử
+			// Command to show history
 			if strings.TrimSpace(cmd) == "list" {
 				tasks, err := node.Store.ListTasks()
 				if err != nil {
-					fmt.Printf("Error listing tasks: %v\n", err)
+					logger.Log.Error("Error listing tasks", zap.Error(err))
 					continue
 				}
-				fmt.Println("\n--- Task History ---")
+				logger.Log.Info("Task History")
 				for _, t := range tasks {
 					ts := time.Unix(t.Timestamp, 0).Format("15:04:05")
-					fmt.Printf("[%s] ID: %s | Status: %s | Result: %s\n", ts, t.ID, t.Status, t.Result)
+					logger.Log.Info("Task", zap.String("timestamp", ts), zap.String("id", t.ID), zap.String("status", string(t.Status)), zap.String("result", t.Result))
 				}
-				fmt.Println("--------------------")
+				logger.Log.Info("--------------------")
 				continue
 			}
 
@@ -103,11 +110,11 @@ func main() {
 
 			wasmBytes, err := os.ReadFile("hello.wasm")
 			if err != nil {
-				fmt.Println("Error reading hello.wasm:", err)
+				logger.Log.Error("Error reading hello.wasm", zap.Error(err))
 				continue
 			}
 
-			fmt.Printf("🚀 Deploying task input: '%s'\n", inputData)
+			logger.Log.Info("Deploying task input", zap.String("input", inputData))
 
 			if strings.HasPrefix(inputData, "consensus ") {
 				realInput := strings.TrimPrefix(inputData, "consensus ")
@@ -117,18 +124,18 @@ func main() {
 				result, err := orch.DeployTaskWithConsensus(wasmBytes, []byte(realInput), 3)
 
 				if err != nil {
-					fmt.Printf("❌ CONSENSUS FAILED: %v\n", err)
+					logger.Log.Error("Consensus Failed", zap.Error(err))
 				} else {
-					fmt.Printf("🏆 TRUSTED RESULT: %s\n", string(result))
+					logger.Log.Info("Trusted Result", zap.String("result", string(result)))
 				}
 				continue
 			}
 
 			result, err := orch.DeployTaskWithRetry(wasmBytes, []byte(inputData))
 			if err != nil {
-				fmt.Printf("❌ DEPLOYMENT FAILED: %v\n", err)
+				logger.Log.Error("Deployment Failed", zap.Error(err))
 			} else {
-				fmt.Printf("🎉 FINAL RESULT: %s\n", string(result))
+				logger.Log.Info("Final Result", zap.String("result", string(result)))
 			}
 		}
 	}()
